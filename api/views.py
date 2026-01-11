@@ -2,6 +2,7 @@ from django.contrib.auth.models import User, Group
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+from django.contrib.auth import get_user_model
 
 from rest_framework.generics import (
     RetrieveAPIView,
@@ -78,10 +79,32 @@ class AccountListView(AccountHelperMixin, ListCreateAPIView):
         return super().get(request, *args, **kwargs)
     
     def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Handle user registration with password
+        data = request.data.copy()
+        password = data.pop('password', None)
+        
+        if password:
+            # Create user with password
+            user = get_user_model().objects.create_user(
+                username=data.get('username'),
+                email=data.get('email', ''),
+                password=password
+            )
+            # Automatically add to Customer group
+            try:
+                customer_group = Group.objects.get(name='Customer')
+                customer_group.user_set.add(user)
+            except Group.DoesNotExist:
+                pass  # Group doesn't exist yet, will be created by migrations
+            
+            serializer = self.serializer_class(user, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            # Fallback to original behavior if no password provided
+            serializer = self.serializer_class(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class AccountDetailView(AccountHelperMixin, RetrieveUpdateDestroyAPIView):

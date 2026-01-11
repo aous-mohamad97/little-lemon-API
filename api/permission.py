@@ -16,6 +16,13 @@ class IsSystemAdministrator(BaseRolePermission):
 
 class IsRestaurantManager(BaseRolePermission):
     required_group = 'Manager'
+    
+    def has_permission(self, request, view):
+        if not bool(request.user and request.user.is_authenticated):
+            return False
+        # Allow both Manager and SysAdmin groups
+        user_groups = request.user.groups.values_list('name', flat=True)
+        return 'Manager' in user_groups or 'SysAdmin' in user_groups
 
 
 class IsDeliveryStaff(BaseRolePermission):
