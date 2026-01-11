@@ -84,18 +84,29 @@ class AccountListView(AccountHelperMixin, ListCreateAPIView):
         password = data.pop('password', None)
         
         if password:
+            # Validate required fields
+            username = data.get('username')
+            if not username:
+                return Response({'username': 'This field is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if user already exists
+            if get_user_model().objects.filter(username=username).exists():
+                return Response({'username': 'A user with this username already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+            
             # Create user with password
             user = get_user_model().objects.create_user(
-                username=data.get('username'),
+                username=username,
                 email=data.get('email', ''),
                 password=password
             )
-            # Automatically add to Customer group
+            # Signal handler will automatically add to Customer group
+            # But we ensure it's added here as well for immediate consistency
             try:
-                customer_group = Group.objects.get(name='Customer')
-                customer_group.user_set.add(user)
-            except Group.DoesNotExist:
-                pass  # Group doesn't exist yet, will be created by migrations
+                customer_group, _ = Group.objects.get_or_create(name='Customer')
+                if not user.groups.filter(name='Customer').exists():
+                    customer_group.user_set.add(user)
+            except Exception:
+                pass  # Signal handler will handle it if this fails
             
             serializer = self.serializer_class(user, context={'request': request})
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -104,6 +115,7 @@ class AccountListView(AccountHelperMixin, ListCreateAPIView):
             serializer = self.serializer_class(data=request.data)
             serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
+            # Signal handler will add to Customer group automatically
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
